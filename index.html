@@ -1,11 +1,28 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <title>Population statistics</title>
     <script src='https://cdn.plot.ly/plotly-2.18.0.min.js'></script>
     <link rel="stylesheet" href="https://unpkg.com/@picocss/pico@1.*/css/pico.min.css">
+    <style>
+        hgroup {
+            cursor: text;
+        }
+
+        #dropdown {
+            width: 50%;
+        }
+
+        svg {
+            border-color: white;
+            border-width: 2px;
+            border-radius: 2px;
+        }
+    </style>
 </head>
+
 <body>
     <main class="container">
         <hgroup>
@@ -17,109 +34,89 @@
                 <select name="dropdown" id="dropdown">
                     <option disabled selected>Select a country</option>
                 </select>
-	            <div id="line-chart"></div>
+                <div id="line-chart"></div>
             </div>
         </div>
     </main>
-</body>
-<script>
 
-let dropdownMenu = document.getElementById("dropdown");
+    <script>
+        /**
+         * Dropdown element.
+         */
+        const dropdown = document.getElementById("dropdown");
 
-async function getCountry() {
-    const country = await fetch('https://api.worldbank.org/v2/country?format=json&region=EUU');
-    const countryData = await country.json();
-    let countryIDs = [];
-    let countryNames = [];
-    for (let i = 0; i < countryData[1].length; i++) {
-        countryIDs.push(countryData[1][i].id);
-        countryNames.push(countryData[1][i].name);
-    }
-    // Create array with country names and IDs
-    let zipped = countryNames.map(function(e, i) {
-        return [e, countryIDs[i]];
-    })
-    // Get the population data and country in alphabetical order
-    for (let i = 0; i < zipped.sort().length; i++) {
-        let countryOption = document.createElement("option");
-        countryOption.text = zipped[i][0];
-        countryOption.value = zipped[i][1];
-        dropdownMenu.appendChild(countryOption);
-    }
-}
+        /**
+         * Get the countries list and create select options.
+         */
+        async function setCountriesList() {
+            const res = await fetch('https://api.worldbank.org/v2/country?format=json&region=EUU');
+            const [_, data] = await res.json();
 
-getCountry();
+            data.sort((a, b) => a.name.localeCompare(b.name))
 
-function generatePlot(countryData) {
-
-    // Create array for the x-axis
-    let yearValues = [];
-    for (i = 1972; i < 2022; i++) {
-        yearValues.push(i);
-    }
-    const populationMax = countryData[0].reduce((a, b) => Math.max(a, b), -Infinity);
-
-    let countryPopulation = {
-      x: yearValues,
-      y: countryData[0],
-      type: 'scatter'
-    };
-    
-    let layout = {
-        title: `Population in ${countryData[1]}: 1972-2021`,
-        xaxis: {
-            title: 'Year',
-            showline: true,
-            showgrid: true,
-            range: [1972, 2021]
-        },
-        yaxis: {
-            title: 'Population',
-            showline: true,
-            showgrid: true,
-            range: [0, populationMax+(populationMax * 0.1)]
+            for (const item of data) {
+                const option = document.createElement("option");
+                option.text = item.name
+                option.value = item.id
+                dropdown.appendChild(option);
+            }
         }
-    }
-    let data = [countryPopulation];
-    
-    Plotly.newPlot('line-chart', data, layout);
-}
 
-async function getPopulationData(ID) {
-    const country = await fetch(`https://api.worldbank.org/v2/country/${ID}/indicator/SP.POP.TOTL?format=json`);
-    const countryData = await country.json();
-    let populationValues = [];
-    for (let i = countryData[1].length -1; i >= 0; i--) {
-        populationValues.push(countryData[1][i].value);
-    }
-    let countryName = countryData[1][0].country.value
-    generatePlot([populationValues, countryName]);
-}
+        /**
+         * Update chart.
+         */
+        function updateChart(country, values, years) {
+            const scatter = {
+                x: years,
+                y: values,
+                type: 'scatter'
+            };
 
-dropdownMenu.addEventListener("change", () => {
-    const checkValue = dropdownMenu.options[dropdownMenu.selectedIndex].value;
-    getPopulationData(checkValue);
-})
+            const layout = {
+                title: `Population in ${country}: ${years.at(0)}-${years.at(-1)}`,
+                xaxis: {
+                    title: 'Year',
+                    showline: true,
+                    showgrid: true,
+                    range: [years.at(0), years.at(-1)]
+                },
+                yaxis: {
+                    title: 'Population',
+                    showline: true,
+                    showgrid: true,
+                    range: [0, Math.max(...values) * 1.1]
+                }
+            }
 
+            Plotly.newPlot('line-chart', [scatter], layout, { responsive: true });
+        }
 
-</script>
-<style>
-hgroup {
-    cursor: text;
-}
+        /**
+         * Set population data.
+         */
+        async function setPopulationData(id) {
+            const res = await fetch(`https://api.worldbank.org/v2/country/${id}/indicator/SP.POP.TOTL?format=json`);
+            const [_, data] = await res.json();
 
-#dropdown {
-    width: 540px;
-}
+            const [values, years] = data.reduceRight(([values, years], item) => [
+                values.concat(item.value),
+                years.concat(Number(item.date))
+            ], [[], []])
 
-#line-chart {
-    width: 992px;
-}
-svg {
-    border-color: white;
-    border-width: 2px;
-    border-radius: 2px;
-}
+            const { country } = data.at(0)
 
-</style>
+            updateChart(country.value, values, years)
+        }
+
+        /**
+         * Set population data on dropdown change.
+         */
+        dropdown.addEventListener("change", (event) => {
+            setPopulationData(event.target.value);
+        })
+
+        setCountriesList();
+    </script>
+</body>
+
 </html>
